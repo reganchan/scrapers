@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chapter Viewer</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f6f6f6;
+      color: #222;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      background: #333;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      z-index: 10;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+
+    #fileInput {
+      background: #555;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    #chapters {
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .chapter {
+      background: white;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    .chapter-title {
+      background: #eee;
+      padding: 10px 15px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+	  font-size: 20px;
+    }
+
+    .chapter-title:hover {
+      background: #ddd;
+    }
+
+    .chapter-content {
+      display: none;
+      padding: 15px;
+      line-height: 1.5;
+    }
+
+    .chapter-content p {
+      margin: 0 10px 10px 0;
+      white-space: pre-wrap;
+	  font-size: 20px;
+	  line-height: 1.8;
+	  margin-bottom: 1em; /* add space between paragraphs */
+    }
+
+    .visible {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📘 Chapter Viewer</h1>
+    <label for="fileInput">Load chapters.json</label>
+    <input type="file" id="fileInput" accept="application/json" style="display:none" />
+  </header>
+
+  <div id="chapters">
+    <p style="text-align:center; color:#666;">Load a chapters.json file to view contents.</p>
+  </div>
+
+  <script>
+    const input = document.getElementById('fileInput');
+    const chaptersDiv = document.getElementById('chapters');
+
+    input.addEventListener('change', event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const data = JSON.parse(e.target.result);
+          displayChapters(data);
+        } catch (err) {
+          alert('Invalid JSON file!');
+        }
+      };
+      reader.readAsText(file);
+      // --- THE FIX ---
+      // Reset the input value so the 'change' event 
+      // fires even if you select the same file again.
+      input.value = "";	  
+    });
+
+    function displayChapters(chapters) {
+      if (!Array.isArray(chapters)) {
+        chaptersDiv.innerHTML = '<p style="color:red;">Error: File format invalid.</p>';
+        return;
+      }
+      chapters.sort((a,b) => a.index - b.index);
+      chaptersDiv.innerHTML = '';
+      for (const ch of chapters) {
+        const container = document.createElement('div');
+        container.className = 'chapter';
+
+        const title = document.createElement('div');
+        title.className = 'chapter-title';
+        title.textContent = `${ch.index + 1}. ${ch.title || '(Untitled)'}`;
+        title.onclick = () => content.classList.toggle('visible');
+
+        const content = document.createElement('div');
+        content.className = 'chapter-content';
+        if (ch.paras) {
+          ch.paras.forEach(p => {
+            const para = document.createElement('p');
+            para.textContent = p;
+            content.appendChild(para);
+          });
+        }
+
+        container.appendChild(title);
+        container.appendChild(content);
+        chaptersDiv.appendChild(container);
+      }
+      // --- SCROLL TO BOTTOM LOGIC ---
+      // We use a small timeout to ensure the browser has finished rendering the HTML
+      setTimeout(() => {
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: 'auto' // Use 'auto' for instant jump
+        });
+      }, 100);	  
+    }
+  </script>
+</body>
+</html>
