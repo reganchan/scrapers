@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anti-Obfuscation Font Mapper (Debug Mode)</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        .glyph-svg { fill: currentColor; }
+        .log-error { color: #f87171; font-weight: bold; }
+        .log-warning { color: #fbbf24; }
+        .log-success { color: #4ade80; }
+        .log-info { color: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <header class="bg-slate-900 text-white p-6 shadow-md flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-bold">🕵️‍♂️ Crawler Font Mapping Utility</h1>
+            <p class="text-slate-400 text-sm mt-1">Enhanced with real-time XML syntax and structural inspection logging.</p>
+        </div>
+        <span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-mono uppercase px-2.5 py-1 rounded-sm font-semibold">Debug Mode Enabled</span>
+    </header>
+
+    <main class="flex-1 p-6 max-w-7xl w-full mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-1 flex flex-col gap-4">
+            <div class="bg-white p-4 rounded-xl shadow-xs border border-slate-200">
+                <h2 class="text-lg font-semibold mb-2">1. Load SVG Font</h2>
+                
+                <div class="mb-3">
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Upload .svg Font File</label>
+                    <input type="file" id="fileInput" accept=".svg" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" />
+                </div>
+
+                <div class="relative flex py-2 items-center">
+                    <div class="flex-grow border-t border-slate-200"></div>
+                    <span class="flex-shrink mx-4 text-slate-400 text-xs uppercase font-mono">or paste xml</span>
+                    <div class="flex-grow border-t border-slate-200"></div>
+                </div>
+
+                <textarea id="svgInput" class="w-full h-32 p-3 border border-slate-300 rounded-lg font-mono text-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500" placeholder="Paste <?xml... or <svg>...</svg> here..."></textarea>
+                <button id="parseBtn" class="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer">
+                    Parse Font Glyphs
+                </button>
+            </div>
+
+            <div class="bg-slate-900 rounded-xl p-4 shadow-xs border border-slate-800 flex flex-col h-64">
+                <div class="flex justify-between items-center mb-2 border-b border-slate-800 pb-1.5">
+                    <h3 class="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider">System Diagnostic Logs</h3>
+                    <button id="clearLogs" class="text-[10px] text-slate-500 hover:text-slate-300 font-mono">Clear</button>
+                </div>
+                <div id="debugConsole" class="flex-1 font-mono text-xs overflow-y-auto space-y-1 pr-1 bg-slate-950 p-2 rounded border border-slate-800/50 whitespace-pre-wrap select-text"></div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-xs border border-slate-200 flex-1 flex flex-col">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-lg font-semibold">3. Export Mapping</h2>
+                    <button id="copyBtn" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1 px-2 rounded-sm transition-colors cursor-pointer">Copy JSON</button>
+                </div>
+                <textarea id="jsonOutput" readonly class="w-full flex-1 p-3 bg-slate-900 text-green-400 font-mono text-xs rounded-lg resize-none" placeholder='{"\\uE900": "0"}'></textarea>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-xs border border-slate-200 flex flex-col h-[calc(100vh-12rem)]">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                <h2 class="text-lg font-semibold">2. Glyph Matrix</h2>
+                <div class="flex items-center gap-4 text-sm text-slate-600">
+                    <label class="flex items-center gap-1">
+                        <input type="checkbox" id="autoAdvance" checked class="rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                        Auto-advance focus
+                    </label>
+                    <span id="glyphCount">0 glyphs loaded</span>
+                </div>
+            </div>
+
+            <div id="glyphGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 overflow-y-auto flex-1 pr-2 content-start">
+                <div class="col-span-full text-center py-12 text-slate-400 italic">
+                    Upload or paste an SVG font on the left to populate the workspace matrix.
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const svgInput = document.getElementById('svgInput');
+        const parseBtn = document.getElementById('parseBtn');
+        const glyphGrid = document.getElementById('glyphGrid');
+        const glyphCount = document.getElementById('glyphCount');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const autoAdvance = document.getElementById('autoAdvance');
+        const copyBtn = document.getElementById('copyBtn');
+        const debugConsole = document.getElementById('debugConsole');
+        const clearLogsBtn = document.getElementById('clearLogs');
+
+        let mappings = {};
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+            const logLine = document.createElement('div');
+            logLine.className = `log-${type}`;
+            logLine.textContent = `[${timestamp}] [${type.toUpperCase()}] ${message}`;
+            debugConsole.appendChild(logLine);
+            debugConsole.scrollTop = debugConsole.scrollHeight;
+        }
+
+        clearLogsBtn.addEventListener('click', () => { debugConsole.innerHTML = ''; });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            log(`File selected: "${file.name}" (${file.size} bytes, type: "${file.type || 'unknown'}")`, 'info');
+            
+            // Check magic bytes / signatures if someone uploads a binary woff by mistake
+            if (file.name.endsWith('.woff') || file.name.endsWith('.woff2') || file.name.endsWith('.ttf')) {
+                log(`CRITICAL: "${file.name}" appears to be a binary font file. Standard browsers cannot parse raw binary font layouts via XML. You must convert this WOFF/TTF file to an SVG Font file first using tools like FontForge or online transpalers.`, 'error');
+                alert("Binary Font files (.woff/.ttf) cannot be parsed directly as XML text. Check logs for details.");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                log(`File text read successfully into sandbox memory.`, 'success');
+                svgInput.value = event.target.result;
+                parseBtn.click();
+            };
+            reader.onerror = () => {
+                log(`FileReader Engine encountered a low-level OS/disk error.`, 'error');
+            };
+            reader.readAsText(file);
+        });
+
+        parseBtn.addEventListener('click', () => {
+            const xmlText = svgInput.value.trim();
+            if (!xmlText) {
+                log("Parse canceled: Textarea buffer is empty.", 'warning');
+                return;
+            }
+
+            log(`Initiating DOMParser compilation... (Buffer length: ${xmlText.length} chars)`, 'info');
+            
+            // Basic early sanity sniffing
+            if (!xmlText.startsWith('<') && !xmlText.startsWith('<?xml')) {
+                log("WARNING: Input string does not look like XML/HTML data (missing leading tags). Check for corrupted file characters.", "warning");
+            }
+
+            try {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "image/svg+xml");
+                
+                // Native DOMParser doesn't throw errors, it outputs a <parsererror> node
+                const parserError = xmlDoc.querySelector('parsererror');
+                if (parserError) {
+                    log(`XML Native Syntax Error Detected:\n${parserError.textContent.trim()}`, 'error');
+                    throw new Error("XML structure contains syntactic malformations.");
+                }
+                log("Native XML parser validation check passed.", "success");
+
+                const fontFace = xmlDoc.querySelector('font-face');
+                const font = xmlDoc.querySelector('font');
+                
+                if (!font) {
+                    log("CRITICAL: <font> tag not found anywhere in document hierarchy. This document is likely a standard vector image, NOT an SVG web font wrapper.", "error");
+                }
+                if (!fontFace) {
+                    log("WARNING: <font-face> sizing rules are missing. Defaulting dimensions fallback safely to 1024 baseline matrix.", "warning");
+                }
+
+                if (!font) {
+                    throw new Error("Missing vital <font> nodes. Aborting matrix rendering loop.");
+                }
+
+                const ascent = parseInt(fontFace ? fontFace.getAttribute('ascent') || '960' : '960');
+                const descent = parseInt(fontFace ? fontFace.getAttribute('descent') || '-64' : '-64');
+                const unitsPerEm = parseInt(fontFace ? fontFace.getAttribute('units-per-em') || '1024' : '1024');
+                const defaultHorizAdv = parseInt(font.getAttribute('horiz-adv-x') || '1024');
+
+                log(`Metrics locked: Ascent=${ascent}, Descent=${descent}, UnitsPerEm=${unitsPerEm}, DefaultHorizAdv=${defaultHorizAdv}`, 'info');
+
+                const glyphs = xmlDoc.querySelectorAll('glyph');
+                log(`Discovered ${glyphs.length} raw <glyph> elements inside font bundle. Matching attributes...`, 'info');
+
+                glyphGrid.innerHTML = '';
+                mappings = {};
+                
+                let loadedCount = 0;
+                let skippedNoUnicode = 0;
+                let skippedNoPath = 0;
+
+                glyphs.forEach((glyph, index) => {
+                    const unicodeAttr = glyph.getAttribute('unicode');
+                    const pathD = glyph.getAttribute('d');
+                    
+                    if (!unicodeAttr) {
+                        skippedNoUnicode++;
+                        return;
+                    }
+                    if (!pathD) {
+                        skippedNoPath++;
+                        return;
+                    }
+
+                    loadedCount++;
+
+                    const charHex = unicodeAttr.codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
+                    const unicodeKey = `\\u${charHex}`;
+                    mappings[unicodeKey] = ""; 
+
+                    const card = document.createElement('div');
+                    card.className = "bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col items-center gap-2 hover:border-slate-300 transition-all";
+
+                    const horizAdvX = glyph.getAttribute('horiz-adv-x') || defaultHorizAdv;
+                    
+                    const svgWrapper = `
+                        <div class="w-16 h-16 bg-white border border-slate-100 rounded-md flex items-center justify-center p-1 text-slate-800">
+                            <svg viewBox="0 0 ${horizAdvX} ${unitsPerEm}" class="w-full h-full glyph-svg">
+                                <g transform="scale(1, -1) translate(0, -${ascent})">
+                                    <path d="${pathD}" />
+                                </g>
+                            </svg>
+                        </div>
+                    `;
+
+                    card.innerHTML = `
+                        ${svgWrapper}
+                        <div class="text-[10px] font-mono text-slate-400 bg-slate-200/50 px-1.5 py-0.5 rounded-sm">U+${charHex}</div>
+                        <input type="text" 
+                               maxlength="2" 
+                               data-key="${unicodeKey}" 
+                               data-index="${index}"
+                               class="glyph-input w-full border border-slate-300 rounded px-2 py-1 text-center font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden" 
+                               placeholder="Type translation...">
+                    `;
+
+                    glyphGrid.appendChild(card);
+                });
+
+                log(`Compilation ended. Loaded: ${loadedCount}, Skipped (No Unicode definition): ${skippedNoUnicode}, Skipped (No Path vector): ${skippedNoPath}`, loadedCount > 0 ? 'success' : 'warning');
+
+                if (loadedCount === 0) {
+                    glyphGrid.innerHTML = `<div class="col-span-full text-center py-12 text-rose-400 italic font-medium">Parser succeeded, but 0 active layout glyphs were drawn. Check system logs for structural warnings.</div>`;
+                }
+
+                glyphCount.textContent = `${loadedCount} glyphs loaded`;
+                updateJsonOutput();
+                setupInputListeners();
+
+            } catch (err) {
+                log(`Execution Error: ${err.message}`, 'error');
+                console.error(err);
+            }
+        });
+
+		function setupInputListeners() {
+		            const inputs = Array.from(document.querySelectorAll('.glyph-input'));
+
+		            inputs.forEach(input => {
+		                input.addEventListener('input', (e) => {
+		                    const key = e.target.getAttribute('data-key');
+		                    mappings[key] = e.target.value;
+		                    updateJsonOutput();
+
+		                    if (autoAdvance.checked && e.target.value.length >= 1) {
+		                        const currentIndex = inputs.indexOf(e.target);
+		                        if (currentIndex + 1 < inputs.length) {
+		                            inputs[currentIndex + 1].focus();
+		                            inputs[currentIndex + 1].select();
+		                        }
+		                    }
+		                });
+
+		                input.addEventListener('keydown', (e) => {
+		                    const currentIndex = inputs.indexOf(e.target);
+		                    if (e.key === 'ArrowRight' && currentIndex + 1 < inputs.length) {
+		                        inputs[currentIndex + 1].focus();
+		                    } else if (e.key === 'ArrowLeft' && currentIndex - 1 >= 0) {
+		                        inputs[currentIndex - 1].focus();
+		                    }
+		                });
+		            });
+		        }
+
+		        function updateJsonOutput() {
+		            jsonOutput.value = JSON.stringify(mappings, null, 2)
+		                .replace(/\\\\u/g, '\\u');
+		        }
+
+		        copyBtn.addEventListener('click', () => {
+		            jsonOutput.select();
+		            document.execCommand('copy');
+		            const originalText = copyBtn.textContent;
+		            copyBtn.textContent = 'Copied!';
+		            setTimeout(() => copyBtn.textContent = originalText, 1500);
+		        });
+		    </script>
+		</body>
+		</html>
